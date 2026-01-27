@@ -1,0 +1,79 @@
+{
+  "celebrities": {
+    "Keanu Reeves": {
+      "podcast_feeds": [
+        "https://feeds.megaphone.fm/the-tim-ferriss-show",
+        "https://feeds.simplecast.com/54nAGcIl",
+        "https://joeroganexp.joerogan.libsynpro.com/rss",
+        "https://www.omnycontent.com/d/playlist/aaea4e69-af51-495e-afc9-a9760146922b/14a43378-edb2-49be-8511-ab0d000a7030/d1b9612f-bb1b-4b85-9c0e-ab0d004ab37a/podcast.rss",
+        "https://feeds.simplecast.com/wgl4xEgL"
+      ],
+      "article_urls": [
+        "https://www.esquire.com/entertainment/movies/a29436579/keanu-reeves-covers-esquire-interview-2019/",
+        "https://www.theguardian.com/film/2021/may/16/keanu-reeves-interview-the-matrix-4",
+        "https://www.gq.com/story/keanu-reeves-on-loss-and-love",
+        "https://www.hollywoodreporter.com/movies/movie-features/keanu-reeves-interview-john-wick-matrix-4-1234963874/"
+      ]
+    },
+    "Virat Kohli": {
+      "podcast_feeds": [
+        "https://feeds.megaphone.fm/the-tim-ferriss-show",
+        "https://feeds.simplecast.com/54nAGcIl",
+        "https://joeroganexp.joerogan.libsynpro.com/rss"
+      ],
+      "article_urls": [
+        "https://www.espncricinfo.com/story/virat-kohli-interview-mental-health-2020-1201321",
+        "https://www.thehindu.com/sport/cricket/virat-kohli-interview/article38234567.ece",
+        "https://www.vogue.in/magazine-story/virat-kohli-interview-on-fame-family-and-fashion/",
+        "https://www.gq.com/story/virat-kohli-cover-story-2023"
+      ]
+    },
+    "Elon Musk": {
+      "podcast_feeds": [
+        "https://joeroganexp.joerogan.libsynpro.com/rss",
+        "https://feeds.megaphone.fm/the-tim-ferriss-show",
+        "https://lexfridman.com/feed/podcast/"
+      ],
+      "article_urls": [
+        "https://www.rollingstone.com/culture/culture-features/elon-musk-the-architect-of-tomorrow-120850/",
+        "https://time.com/person-of-the-year-2021-elon-musk/"
+      ]
+    },
+    "Taylor Swift": {
+      "podcast_feeds": [
+        "https://feeds.megaphone.fm/the-tim-ferriss-show",
+        "https://feeds.simplecast.com/54nAGcIl",
+        "https://www.omnycontent.com/d/playlist/aaea4e69-af51-495e-afc9-a9760146922b/14a43378-edb2-49be-8511-ab0d000a7030/d1b9612f-bb1b-4b85-9c0e-ab0d004ab37a/podcast.rss"
+      ],
+      "article_urls": [
+        "https://www.rollingstone.com/music/music-features/taylor-swift-rolling-stone-interview-880794/",
+        "https://www.vogue.com/article/taylor-swift-cover-interview-2016",
+        "https://time.com/person-of-the-year-2023-taylor-swift/"
+      ]
+    },
+    "Serena Williams": {
+      "podcast_feeds": [
+        "https://feeds.megaphone.fm/the-tim-ferriss-show",
+        "https://www.omnycontent.com/d/playlist/aaea4e69-af51-495e-afc9-a9760146922b/14a43378-edb2-49be-8511-ab0d000a7030/d1b9612f-bb1b-4b85-9c0e-ab0d004ab37a/podcast.rss",
+        "https://feeds.simplecast.com/wgl4xEgL"
+      ],
+      "article_urls": [
+        "https://www.vogue.com/article/serena-williams-farewell-tennis",
+        "https://www.gq.com/story/serena-williams-25-greatest-athletes"
+      ]
+    }
+  },
+  "default_podcast_feeds": [
+    "https://feeds.megaphone.fm/the-tim-ferriss-show",
+    "https://feeds.simplecast.com/54nAGcIl",
+    "https://joeroganexp.joerogan.libsynpro.com/rss",
+    "https://www.omnycontent.com/d/playlist/aaea4e69-af51-495e-afc9-a9760146922b/14a43378-edb2-49be-8511-ab0d000a7030/d1b9612f-bb1b-4b85-9c0e-ab0d004ab37a/podcast.rss",
+    "https://feeds.simplecast.com/wgl4xEgL",
+    "https://lexfridman.com/feed/podcast/"
+  ],
+  "notes": {
+    "podcast_feeds": "RSS feed URLs for popular interview podcasts. Episodes mentioning the celebrity will be automatically detected.",
+    "article_urls": "Direct URLs to interview articles. These will be scraped and processed for Q&A content.",
+    "default_podcast_feeds": "Used when no celebrity-specific feeds are configured. System will search these for episodes mentioning the celebrity."
+  }
+}
