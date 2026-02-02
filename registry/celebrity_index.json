@@ -693,8 +693,27 @@
         "https://www.youtube.com/watch?v=1rW0tAvpGl0&t=3049",
         "https://www.youtube.com/watch?v=2xzIc-sY-cA&t=532"
       ]
+    },
+    "Sam Altman": {
+      "last_indexed": "2026-01-29T17:26:27.710109",
+      "last_updated": "2026-01-29T17:26:27.710112",
+      "sources_count": 7,
+      "questions_count": 646,
+      "source_types": [
+        "article",
+        "podcast"
+      ],
+      "sources": [
+        "https://www.ted.com/pages/sam-altman-on-the-future-of-ai-and-humanity-transcript",
+        "https://www.econtalk.org/sam-altman-on-start-ups-venture-capital-and-the-y-combinator/",
+        "https://lexfridman.com/sam-altman-2/?utm_source=rss&utm_medium=rss&utm_campaign=sam-altman-2",
+        "https://www.nytimes.com/the-daily",
+        "https://www.linkedin.com/posts/rsepulveda_in-this-ask-me-anything-session-with-sam-activity-7067900270818512896-jnO-",
+        "https://eu.36kr.com/en/p/3657408499016329",
+        "https://www.forbes.com/sites/annatong/2026/01/28/openai-wants-to-create-biometric-social-network-to-kill-xs-bot-problem/"
+      ]
     }
   },
-  "last_updated": "2026-01-27T13:11:24.040688",
+  "last_updated": "2026-01-29T17:26:27.710115",
   "version": "1.0.0"
 }

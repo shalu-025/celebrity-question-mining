@@ -123,7 +123,7 @@ Format the response in a clear, user-friendly way with proper markdown formattin
             answer = self.client.generate(
                 prompt=prompt,
                 system="You are a precise assistant that presents search results without adding information.",
-                model="claude-3-haiku-20240307",  # Fast, cost-effective
+                model="claude-sonnet-4-20250514",  # ✅ Per requirements
                 max_tokens=1000,
                 temperature=0.3,
                 purpose="format_retrieval_results"

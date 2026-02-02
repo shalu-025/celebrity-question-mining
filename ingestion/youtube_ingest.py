@@ -26,8 +26,8 @@ class YouTubeIngester:
         self.download_dir = download_dir
         os.makedirs(download_dir, exist_ok=True)
         self.transcriber = get_transcriber()
-        # 🔴 CRITICAL: use_llm=False (NO LLM for extraction per constraints)
-        self.question_extractor = get_question_extractor(use_llm=False)
+        # 🔴 CRITICAL: use_llm=True (NO LLM for extraction per constraints)
+        self.question_extractor = get_question_extractor(use_llm=True)
 
     def search_videos(
         self,

@@ -143,7 +143,7 @@ Respond in JSON format:
             response_text = self.client.generate(
                 prompt=prompt + "\n\nRespond with ONLY a JSON object, no other text.",
                 system="You are a precise decision-making agent. Always respond with valid JSON.",
-                model="claude-3-haiku-20240307",  # Fast, cost-effective
+                model="claude-sonnet-4-20250514",  # ✅ Per requirements
                 max_tokens=200,
                 temperature=0,
                 purpose="agent_decision_making"

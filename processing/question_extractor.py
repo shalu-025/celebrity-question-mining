@@ -1,24 +1,32 @@
 """
-Question Extractor
+Question Extractor - TWO-STAGE EXTRACTION PIPELINE
 Extracts ONLY interviewer questions from transcripts
 
-🔴 CRITICAL: Uses ONLY rule-based heuristics (NO LLM)
-Per system constraints, LLM must NOT be used for extraction
+🎯 MANDATORY TWO-STAGE APPROACH:
+  Stage 1: Rule-based heuristic extraction (NO LLM)
+  Stage 2: LLM refinement with Claude (ONLY candidate questions, NOT full transcripts)
+
+✅ Per system constraints:
+- LLM is ALLOWED for question refinement & validation
+- LLM must NOT receive full transcripts or audio
+- ONLY send candidate question strings to LLM
+- Use Claude Sonnet 4 ONLY (NOT OpenAI)
 """
 
 import re
 from typing import List, Dict, Optional
 import os
 from utils.logger import get_logger
+from utils.llm_cost_tracker import get_claude_client, get_cost_tracker
 
 logger = get_logger(__name__)
 
 
 class QuestionExtractor:
     """
-    Extracts interviewer questions from interview transcripts
-    Step 1: Heuristic filtering (fast, cheap)
-    Step 2: LLM refinement (accurate, moderate cost)
+    TWO-STAGE question extraction pipeline:
+    1. Heuristic filtering (fast, free, extracts candidates)
+    2. LLM refinement (Claude only, removes noise, merges duplicates)
     """
 
     # Interrogative words that typically start questions
@@ -28,29 +36,29 @@ class QuestionExtractor:
         'is', 'are', 'was', 'were', 'will', 'have', 'has', 'had'
     ]
 
-    def __init__(self, openai_api_key: Optional[str] = None, use_llm: bool = False):
+    def __init__(self, use_llm: bool = True):
         """
-        Initialize question extractor
-
-        🔴 CRITICAL: LLM refinement is DISABLED by design
-        Only rule-based heuristics are used per system constraints
+        Initialize question extractor with TWO-STAGE pipeline
 
         Args:
-            openai_api_key: DEPRECATED - Not used
-            use_llm: DEPRECATED - Always False (LLM forbidden for extraction)
+            use_llm: If True, use LLM for Stage 2 refinement (RECOMMENDED)
         """
-        # ENFORCE: NO LLM for question extraction
-        self.use_llm = False
+        self.use_llm = use_llm
+        self.cost_tracker = get_cost_tracker()
 
         if use_llm:
-            logger.warning("❌ LLM refinement requested but FORBIDDEN by constraints")
-            logger.warning("🔒 Using heuristics-only extraction")
+            self.claude_client = get_claude_client()
+            logger.info("✅ Question extractor initialized (TWO-STAGE: heuristics + Claude refinement)")
+        else:
+            logger.info("✅ Question extractor initialized (heuristics-only mode)")
 
-        logger.info("✅ Question extractor initialized (heuristics-only, NO LLM)")
+    # =========================================================================
+    # STAGE 1: RULE-BASED HEURISTIC EXTRACTION (NO LLM)
+    # =========================================================================
 
     def extract_questions_heuristic(self, text: str) -> List[str]:
         """
-        Extract potential questions using heuristics
+        STAGE 1: Extract candidate questions using rule-based heuristics
 
         Rules:
         1. Sentence ends with '?'
@@ -58,13 +66,12 @@ class QuestionExtractor:
         3. Reasonable length (5-200 words)
 
         Args:
-            text: Transcript text
+            text: Transcript or article text
 
         Returns:
-            List of potential question strings
+            List of CANDIDATE question strings (may contain noise)
         """
-        # Split into sentences, keeping the delimiter to check for '?'
-        # Use lookahead to keep the punctuation with the sentence
+        # Split into sentences
         sentences = re.split(r'(?<=[.!?])\s+', text)
 
         potential_questions = []
@@ -83,8 +90,7 @@ class QuestionExtractor:
             first_word = words[0] if words else ""
             starts_with_interrogative = first_word in self.INTERROGATIVE_WORDS
 
-            # Also check if contains an interrogative word (for questions like
-            # "The West Delhi Cricket Academy, how would you best explain...")
+            # Also check if contains an interrogative word
             contains_interrogative = any(word in self.INTERROGATIVE_WORDS for word in words)
 
             # Check length
@@ -109,28 +115,131 @@ class QuestionExtractor:
 
                 potential_questions.append(question)
 
-        logger.info(f"Heuristic extraction: {len(potential_questions)} potential questions")
+        logger.info(f"📋 STAGE 1 (Heuristics): Extracted {len(potential_questions)} candidate questions")
         return potential_questions
+
+    # =========================================================================
+    # STAGE 2: LLM-BASED REFINEMENT (CLAUDE ONLY, QUESTIONS ONLY)
+    # =========================================================================
 
     def refine_questions_with_llm(
         self,
-        potential_questions: List[str],
-        batch_size: int = 20
+        candidate_questions: List[str],
+        batch_size: int = 30
     ) -> List[str]:
         """
-        🔴 DISABLED: LLM refinement is FORBIDDEN
-        Per system constraints, LLM cannot be used for question extraction
+        STAGE 2: Refine candidate questions using Claude
+
+        ⚠️ CRITICAL: Sends ONLY candidate question strings to LLM
+                    Does NOT send full transcripts or audio
+
+        Tasks for Claude:
+        1. Remove non-questions (rhetorical, incomplete, gibberish)
+        2. Merge duplicate/paraphrased questions
+        3. Rewrite incomplete questions into clean interview questions
+        4. Return clean list of valid interview questions
 
         Args:
-            potential_questions: List of potential questions from heuristics
-            batch_size: DEPRECATED - Not used
+            candidate_questions: List of candidate questions from Stage 1
+            batch_size: Number of questions to process per LLM call
 
         Returns:
-            Original potential_questions (unrefined)
+            List of refined, clean interview questions
         """
-        logger.info("🚫 LLM refinement is DISABLED (heuristics-only mode)")
-        logger.info(f"Returning {len(potential_questions)} heuristic-extracted questions")
-        return potential_questions
+        if not self.use_llm:
+            logger.warning("🚫 LLM refinement disabled, returning heuristic results")
+            return candidate_questions
+
+        if not candidate_questions:
+            logger.info("📋 STAGE 2 (LLM): No candidates to refine")
+            return []
+
+        logger.info(f"🤖 STAGE 2 (LLM): Refining {len(candidate_questions)} candidates with Claude")
+
+        refined_questions = []
+
+        # Process in batches
+        for i in range(0, len(candidate_questions), batch_size):
+            batch = candidate_questions[i:i + batch_size]
+
+            logger.info(f"  Processing batch {i//batch_size + 1} ({len(batch)} questions)")
+
+            # Create numbered list for Claude
+            numbered_questions = "\n".join(
+                [f"{idx+1}. {q}" for idx, q in enumerate(batch)]
+            )
+
+            prompt = f"""You are an expert question filter for an interview analysis system.
+
+Below is a list of CANDIDATE questions extracted from an interview transcript using heuristics.
+Some may be genuine interviewer questions, but many are likely:
+- Rhetorical questions from the celebrity
+- Incomplete or fragmented sentences
+- Non-questions misidentified due to punctuation
+- Duplicate or paraphrased questions
+
+YOUR TASK:
+1. Identify ONLY genuine interviewer questions
+2. Merge duplicate/similar questions into one
+3. Rewrite incomplete questions into clean, complete interview questions
+4. Remove all rhetorical questions, fragments, and non-questions
+
+CANDIDATE QUESTIONS:
+{numbered_questions}
+
+RESPONSE FORMAT:
+Return ONLY the refined questions as a numbered list. Example:
+1. What inspired you to become an actor?
+2. How do you prepare for a difficult role?
+
+If NO valid questions exist, return: NONE
+
+Refined questions:"""
+
+            try:
+                response = self.claude_client.generate(
+                    prompt=prompt,
+                    system="You are a precise question classifier and rewriter. Extract only genuine interviewer questions.",
+                    model="claude-sonnet-4-20250514",  # ✅ Correct model as per requirements
+                    max_tokens=2000,
+                    temperature=0,
+                    purpose="question_refinement"
+                )
+
+                # Parse response
+                if response.strip().upper() == "NONE":
+                    logger.info(f"  Batch {i//batch_size + 1}: No valid questions found")
+                    continue
+
+                # Extract questions from numbered list
+                lines = response.strip().split('\n')
+                for line in lines:
+                    line = line.strip()
+                    if not line:
+                        continue
+
+                    # Remove numbering (handles formats like "1.", "1)", "1 -", etc.)
+                    clean_line = re.sub(r'^\d+[\.):\-\s]+', '', line).strip()
+
+                    if clean_line and len(clean_line) >= 10:
+                        # Ensure it ends with question mark
+                        if not clean_line.endswith('?'):
+                            clean_line += '?'
+                        refined_questions.append(clean_line)
+
+                logger.info(f"  Batch {i//batch_size + 1}: Extracted {len(refined_questions) - len(refined_questions[:i])} refined questions")
+
+            except Exception as e:
+                logger.error(f"❌ Error in LLM refinement: {e}")
+                # Fallback: include all from this batch (better than losing data)
+                refined_questions.extend(batch)
+
+        logger.info(f"✅ STAGE 2 (LLM): Final refined questions: {len(refined_questions)}")
+        return refined_questions
+
+    # =========================================================================
+    # EXTRACTION FROM DIFFERENT SOURCES
+    # =========================================================================
 
     def extract_from_segments(
         self,
@@ -138,8 +247,8 @@ class QuestionExtractor:
         speaker_aware: bool = True
     ) -> List[Dict]:
         """
-        Extract questions from timestamped segments
-        Better for creating timestamped question links
+        Extract questions from timestamped segments (for audio)
+        Uses TWO-STAGE pipeline
 
         Args:
             segments: List of segment dicts with 'text', 'start', 'end', 'speaker' (optional)
@@ -148,6 +257,7 @@ class QuestionExtractor:
         Returns:
             List of question dicts with text and timestamp
         """
+        # STAGE 1: Heuristic extraction from segments
         questions_with_timestamps = []
 
         for segment in segments:
@@ -158,18 +268,21 @@ class QuestionExtractor:
             if speaker_aware and speaker != "interviewer" and speaker != "unknown":
                 continue
 
-            # Extract questions from this segment
-            potential_questions = self.extract_questions_heuristic(text)
+            # Extract candidate questions
+            candidate_questions = self.extract_questions_heuristic(text)
 
-            for question in potential_questions:
+            for question in candidate_questions:
                 questions_with_timestamps.append({
                     "text": question,
                     "timestamp": segment.get("start", 0),
                     "speaker": speaker
                 })
 
-        # Refine with LLM if enabled
-        if self.use_llm and questions_with_timestamps:
+        if not questions_with_timestamps:
+            return []
+
+        # STAGE 2: LLM refinement (only on question texts, not full segments)
+        if self.use_llm:
             question_texts = [q["text"] for q in questions_with_timestamps]
             refined_texts = self.refine_questions_with_llm(question_texts)
 
@@ -180,7 +293,7 @@ class QuestionExtractor:
                 if q["text"] in refined_set
             ]
 
-        logger.info(f"Extracted {len(questions_with_timestamps)} questions from segments")
+        logger.info(f"✅ TWO-STAGE: Extracted {len(questions_with_timestamps)} final questions from segments")
         return questions_with_timestamps
 
     def extract_from_transcript(
@@ -190,6 +303,7 @@ class QuestionExtractor:
     ) -> List[Dict]:
         """
         Extract questions from full transcript data
+        Uses TWO-STAGE pipeline
 
         Args:
             transcript_data: Dict from WhisperTranscriber
@@ -214,38 +328,69 @@ class QuestionExtractor:
         else:
             # Fall back to full text extraction
             text = transcript_data.get("text", "")
-            potential_questions = self.extract_questions_heuristic(text)
 
+            # STAGE 1: Heuristic extraction
+            candidate_questions = self.extract_questions_heuristic(text)
+
+            # STAGE 2: LLM refinement
             if self.use_llm:
-                refined_questions = self.refine_questions_with_llm(potential_questions)
+                refined_questions = self.refine_questions_with_llm(candidate_questions)
             else:
-                refined_questions = potential_questions
+                refined_questions = candidate_questions
 
             # Return without timestamps
             return [{"text": q, "timestamp": 0, "speaker": "unknown"} for q in refined_questions]
+
+    def extract_from_article_text(self, article_text: str) -> List[str]:
+        """
+        Extract questions from article text
+        Uses TWO-STAGE pipeline
+
+        Args:
+            article_text: Full article text
+
+        Returns:
+            List of refined question strings
+        """
+        # STAGE 1: Heuristic extraction
+        candidate_questions = self.extract_questions_heuristic(article_text)
+
+        if not candidate_questions:
+            return []
+
+        # STAGE 2: LLM refinement
+        if self.use_llm:
+            refined_questions = self.refine_questions_with_llm(candidate_questions)
+        else:
+            refined_questions = candidate_questions
+
+        logger.info(f"✅ TWO-STAGE: Extracted {len(refined_questions)} final questions from article")
+        return refined_questions
 
 
 # Global instance
 _extractor = None
 
-def get_question_extractor(use_llm: bool = False) -> QuestionExtractor:
+def get_question_extractor(use_llm: bool = True) -> QuestionExtractor:
     """
     Get global question extractor instance
 
-    🔴 CRITICAL: use_llm is ALWAYS False (LLM forbidden for extraction)
+    ✅ TWO-STAGE approach with Claude refinement (RECOMMENDED)
+
+    Args:
+        use_llm: If True, uses TWO-STAGE pipeline with Claude refinement
     """
     global _extractor
     if _extractor is None:
-        # ENFORCE: NO LLM allowed
-        _extractor = QuestionExtractor(use_llm=False)
+        _extractor = QuestionExtractor(use_llm=use_llm)
     return _extractor
 
 
 if __name__ == "__main__":
-    # Test question extractor
-    extractor = get_question_extractor(use_llm=False)  # Disable LLM for testing
+    # Test TWO-STAGE extraction
+    extractor = get_question_extractor(use_llm=False)  # Test without LLM first
 
-    # Test text
+    # Test text with noise
     sample_text = """
     So tell me, what inspired you to become an actor?
     Well, I always loved movies. I used to watch them all the time.
@@ -253,9 +398,19 @@ if __name__ == "__main__":
     I do a lot of research. I read about the character.
     What's your favorite movie you've worked on?
     Definitely the last one.
+    You know what I mean?
+    Yeah, totally.
     """
 
-    questions = extractor.extract_questions_heuristic(sample_text)
-    print("Extracted questions:")
-    for q in questions:
+    print("=" * 60)
+    print("STAGE 1: Heuristic Extraction")
+    print("=" * 60)
+    candidates = extractor.extract_questions_heuristic(sample_text)
+    print(f"Candidates: {len(candidates)}")
+    for q in candidates:
         print(f"  - {q}")
+
+    # Test with LLM (would require API key)
+    print("\n" + "=" * 60)
+    print("For STAGE 2 (LLM refinement), set use_llm=True")
+    print("=" * 60)

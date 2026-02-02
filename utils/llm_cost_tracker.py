@@ -13,22 +13,28 @@ from anthropic import Anthropic
 logger = logging.getLogger(__name__)
 
 
-# Claude 3.5 pricing (as of 2024)
+# Claude pricing (as of 2025)
 # https://www.anthropic.com/pricing
 CLAUDE_PRICING = {
-    "claude-3-5-sonnet-20241022": {
+    # Claude Sonnet 4 (2025)
+    "claude-sonnet-4-20250514": {
         "input": 3.00 / 1_000_000,  # $3 per million input tokens
         "output": 15.00 / 1_000_000,  # $15 per million output tokens
+    },
+    # Claude 3.5 Sonnet (Legacy)
+    "claude-3-5-sonnet-20241022": {
+        "input": 3.00 / 1_000_000,
+        "output": 15.00 / 1_000_000,
     },
     "claude-3-sonnet-20240229": {
         "input": 3.00 / 1_000_000,
         "output": 15.00 / 1_000_000,
     },
+    # Claude 3 Haiku (Fast, cheap)
     "claude-3-haiku-20240307": {
-        "input": 0.25 / 1_000_000,  # $0.25 per million input tokens
-        "output": 1.25 / 1_000_000,  # $1.25 per million output tokens
+        "input": 0.25 / 1_000_000,
+        "output": 1.25 / 1_000_000,
     },
-    # Add more models as needed
 }
 
 
@@ -170,7 +176,7 @@ class ClaudeClient:
         self,
         prompt: str,
         system: Optional[str] = None,
-        model: str = "claude-3-haiku-20240307",
+        model: str = "claude-sonnet-4-20250514",  # ✅ Default to Sonnet 4 per requirements
         max_tokens: int = 1024,
         temperature: float = 0.0,
         purpose: str = "generation"
