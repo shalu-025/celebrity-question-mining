@@ -2,26 +2,39 @@
 LLM Cost Tracker
 Mandatory cost logging for every LLM call
 Ensures transparency and cost control
+
+🔄 UPDATED: Now uses Qwen 2.5 3B Instruct via OpenAI-compatible API (e.g., Ollama)
 """
 
 import os
 import logging
 from typing import Dict, Optional
 from datetime import datetime
-from anthropic import Anthropic
+from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 
 
-# Claude pricing (as of 2025)
-# https://www.anthropic.com/pricing
-CLAUDE_PRICING = {
-    # Claude Sonnet 4 (2025)
-    "claude-sonnet-4-20250514": {
-        "input": 3.00 / 1_000_000,  # $3 per million input tokens
-        "output": 15.00 / 1_000_000,  # $15 per million output tokens
+# Default model configuration
+DEFAULT_MODEL = os.getenv("QWEN_MODEL", "qwen2.5:3b-instruct")
+DEFAULT_BASE_URL = os.getenv("QWEN_BASE_URL", "http://localhost:11434/v1")
+
+# LLM pricing (local models are free, but we track for consistency)
+LLM_PRICING = {
+    # Qwen models (local - $0 cost)
+    "qwen2.5:3b-instruct": {
+        "input": 0.0,
+        "output": 0.0,
     },
-    # Claude 3.5 Sonnet (Legacy)
+    "qwen2.5-3b-instruct": {
+        "input": 0.0,
+        "output": 0.0,
+    },
+    # Legacy Claude pricing (kept for reference)
+    "claude-sonnet-4-20250514": {
+        "input": 3.00 / 1_000_000,
+        "output": 15.00 / 1_000_000,
+    },
     "claude-3-5-sonnet-20241022": {
         "input": 3.00 / 1_000_000,
         "output": 15.00 / 1_000_000,
@@ -30,7 +43,6 @@ CLAUDE_PRICING = {
         "input": 3.00 / 1_000_000,
         "output": 15.00 / 1_000_000,
     },
-    # Claude 3 Haiku (Fast, cheap)
     "claude-3-haiku-20240307": {
         "input": 0.25 / 1_000_000,
         "output": 1.25 / 1_000_000,
@@ -67,8 +79,8 @@ class LLMCostTracker:
             purpose: Description of what this call was for
         """
         # Calculate cost
-        if model in CLAUDE_PRICING:
-            pricing = CLAUDE_PRICING[model]
+        if model in LLM_PRICING:
+            pricing = LLM_PRICING[model]
             input_cost = input_tokens * pricing["input"]
             output_cost = output_tokens * pricing["output"]
             total_cost = input_cost + output_cost
@@ -151,43 +163,44 @@ def reset_cost_tracker():
 
 class ClaudeClient:
     """
-    Wrapper around Anthropic Claude API with automatic cost tracking
+    Wrapper around OpenAI-compatible API (Qwen via Ollama) with automatic cost tracking
+
+    🔄 UPDATED: Now uses Qwen 2.5 3B Instruct instead of Claude
     """
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None):
         """
-        Initialize Claude client
+        Initialize LLM client for Qwen model
 
         Args:
-            api_key: Claude API key (defaults to CLAUDE_KEY env var)
+            api_key: API key (optional for local Ollama, defaults to "ollama")
+            base_url: Base URL for OpenAI-compatible API (defaults to Ollama)
         """
-        api_key = api_key or os.getenv("CLAUDE_KEY")
-        if not api_key:
-            raise ValueError(
-                "❌ CLAUDE_KEY not found in environment.\n"
-                "Set CLAUDE_KEY in your .env file"
-            )
+        # For Ollama, api_key can be anything (it's not used)
+        api_key = api_key or os.getenv("QWEN_API_KEY", "ollama")
+        base_url = base_url or os.getenv("QWEN_BASE_URL", DEFAULT_BASE_URL)
 
-        self.client = Anthropic(api_key=api_key)
+        self.model = os.getenv("QWEN_MODEL", DEFAULT_MODEL)
+        self.client = OpenAI(api_key=api_key, base_url=base_url)
         self.cost_tracker = get_cost_tracker()
-        logger.info("✅ Claude client initialized with cost tracking")
+        logger.info(f"✅ LLM client initialized (Qwen: {self.model}) with cost tracking")
 
     def generate(
         self,
         prompt: str,
         system: Optional[str] = None,
-        model: str = "claude-sonnet-4-20250514",  # ✅ Default to Sonnet 4 per requirements
+        model: str = None,  # Ignored - uses Qwen model
         max_tokens: int = 1024,
         temperature: float = 0.0,
         purpose: str = "generation"
     ) -> str:
         """
-        Generate text with Claude and track costs
+        Generate text with Qwen and track costs
 
         Args:
             prompt: User prompt
             system: System prompt (optional)
-            model: Claude model to use
+            model: Ignored - uses Qwen model from config
             max_tokens: Maximum output tokens
             temperature: Sampling temperature (0-1)
             purpose: Description of purpose (for logging)
@@ -195,46 +208,46 @@ class ClaudeClient:
         Returns:
             Generated text
         """
-        logger.info(f"🤖 Calling Claude: {purpose}")
+        # Always use Qwen model
+        actual_model = self.model
+        logger.info(f"🤖 Calling Qwen ({actual_model}): {purpose}")
 
-        messages = [{"role": "user", "content": prompt}]
-
-        kwargs = {
-            "model": model,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-            "messages": messages
-        }
-
+        messages = []
         if system:
-            kwargs["system"] = system
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
 
         try:
-            response = self.client.messages.create(**kwargs)
+            response = self.client.chat.completions.create(
+                model=actual_model,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=temperature
+            )
 
-            # Extract tokens from usage
-            input_tokens = response.usage.input_tokens
-            output_tokens = response.usage.output_tokens
+            # Extract tokens from usage (if available)
+            input_tokens = response.usage.prompt_tokens if response.usage else 0
+            output_tokens = response.usage.completion_tokens if response.usage else 0
 
-            # Log cost
+            # Log cost (will be $0 for local models)
             self.cost_tracker.log_call(
-                model=model,
+                model=actual_model,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 purpose=purpose
             )
 
             # Extract text
-            return response.content[0].text
+            return response.choices[0].message.content
 
         except Exception as e:
-            logger.error(f"❌ Error calling Claude: {e}")
+            logger.error(f"❌ Error calling Qwen: {e}")
             raise
 
 
 # Convenience function
 def get_claude_client() -> ClaudeClient:
-    """Get Claude client with cost tracking"""
+    """Get LLM client with cost tracking (uses Qwen via Ollama)"""
     return ClaudeClient()
 
 
@@ -242,9 +255,9 @@ if __name__ == "__main__":
     # Test cost tracker
     tracker = get_cost_tracker()
 
-    # Simulate some API calls
-    tracker.log_call("claude-3-haiku-20240307", input_tokens=500, output_tokens=200, purpose="test")
-    tracker.log_call("claude-3-5-sonnet-20241022", input_tokens=1000, output_tokens=500, purpose="test")
+    # Simulate some API calls (using Qwen model)
+    tracker.log_call("qwen2.5:3b-instruct", input_tokens=500, output_tokens=200, purpose="test")
+    tracker.log_call("qwen2.5:3b-instruct", input_tokens=1000, output_tokens=500, purpose="test")
 
     # Print summary
     tracker.print_summary()

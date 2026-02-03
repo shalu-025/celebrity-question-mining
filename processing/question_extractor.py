@@ -4,13 +4,13 @@ Extracts ONLY interviewer questions from transcripts
 
 🎯 MANDATORY TWO-STAGE APPROACH:
   Stage 1: Rule-based heuristic extraction (NO LLM)
-  Stage 2: LLM refinement with Claude (ONLY candidate questions, NOT full transcripts)
+  Stage 2: LLM refinement with Qwen (ONLY candidate questions, NOT full transcripts)
 
 ✅ Per system constraints:
 - LLM is ALLOWED for question refinement & validation
 - LLM must NOT receive full transcripts or audio
 - ONLY send candidate question strings to LLM
-- Use Claude Sonnet 4 ONLY (NOT OpenAI)
+- Uses Qwen 2.5 3B Instruct via Ollama
 """
 
 import re
@@ -48,7 +48,7 @@ class QuestionExtractor:
 
         if use_llm:
             self.claude_client = get_claude_client()
-            logger.info("✅ Question extractor initialized (TWO-STAGE: heuristics + Claude refinement)")
+            logger.info("✅ Question extractor initialized (TWO-STAGE: heuristics + Qwen refinement)")
         else:
             logger.info("✅ Question extractor initialized (heuristics-only mode)")
 
@@ -128,12 +128,12 @@ class QuestionExtractor:
         batch_size: int = 30
     ) -> List[str]:
         """
-        STAGE 2: Refine candidate questions using Claude
+        STAGE 2: Refine candidate questions using Qwen LLM
 
         ⚠️ CRITICAL: Sends ONLY candidate question strings to LLM
                     Does NOT send full transcripts or audio
 
-        Tasks for Claude:
+        Tasks for Qwen:
         1. Remove non-questions (rhetorical, incomplete, gibberish)
         2. Merge duplicate/paraphrased questions
         3. Rewrite incomplete questions into clean interview questions
@@ -154,7 +154,7 @@ class QuestionExtractor:
             logger.info("📋 STAGE 2 (LLM): No candidates to refine")
             return []
 
-        logger.info(f"🤖 STAGE 2 (LLM): Refining {len(candidate_questions)} candidates with Claude")
+        logger.info(f"🤖 STAGE 2 (LLM): Refining {len(candidate_questions)} candidates with Qwen")
 
         refined_questions = []
 
@@ -164,55 +164,45 @@ class QuestionExtractor:
 
             logger.info(f"  Processing batch {i//batch_size + 1} ({len(batch)} questions)")
 
-            # Create numbered list for Claude
+            # Create numbered list for Qwen
             numbered_questions = "\n".join(
                 [f"{idx+1}. {q}" for idx, q in enumerate(batch)]
             )
 
-            prompt = f"""You are an expert question filter for an interview analysis system.
+            # ULTRA-SIMPLE PROMPT - Qwen 3B struggles with filtering, so just rewrite
+            prompt = f"""Rewrite these questions to be clean interview questions.
 
-Below is a list of CANDIDATE questions extracted from an interview transcript using heuristics.
-Some may be genuine interviewer questions, but many are likely:
-- Rhetorical questions from the celebrity
-- Incomplete or fragmented sentences
-- Non-questions misidentified due to punctuation
-- Duplicate or paraphrased questions
-
-YOUR TASK:
-1. Identify ONLY genuine interviewer questions
-2. Merge duplicate/similar questions into one
-3. Rewrite incomplete questions into clean, complete interview questions
-4. Remove all rhetorical questions, fragments, and non-questions
-
-CANDIDATE QUESTIONS:
+INPUT QUESTIONS:
 {numbered_questions}
 
-RESPONSE FORMAT:
-Return ONLY the refined questions as a numbered list. Example:
+OUTPUT: Return each question as a numbered list. Make them clear and complete.
+Example output:
 1. What inspired you to become an actor?
-2. How do you prepare for a difficult role?
+2. How do you prepare for difficult roles?
 
-If NO valid questions exist, return: NONE
-
-Refined questions:"""
+Your rewritten questions:"""
 
             try:
                 response = self.claude_client.generate(
                     prompt=prompt,
-                    system="You are a precise question classifier and rewriter. Extract only genuine interviewer questions.",
-                    model="claude-sonnet-4-20250514",  # ✅ Correct model as per requirements
+                    system="You rewrite questions to be clear and complete.",
                     max_tokens=2000,
-                    temperature=0,
+                    temperature=0.2,  # Slightly creative for rewriting
                     purpose="question_refinement"
                 )
 
+                # DEBUG: Log what Qwen actually returned
+                logger.info(f"  Qwen response ({len(response)} chars): {repr(response[:150])}")
+
                 # Parse response
-                if response.strip().upper() == "NONE":
+                if "NONE" in response.upper() and len(response.strip()) < 20:
                     logger.info(f"  Batch {i//batch_size + 1}: No valid questions found")
                     continue
 
                 # Extract questions from numbered list
                 lines = response.strip().split('\n')
+                batch_count = 0
+                
                 for line in lines:
                     line = line.strip()
                     if not line:
@@ -226,12 +216,14 @@ Refined questions:"""
                         if not clean_line.endswith('?'):
                             clean_line += '?'
                         refined_questions.append(clean_line)
+                        batch_count += 1
 
-                logger.info(f"  Batch {i//batch_size + 1}: Extracted {len(refined_questions) - len(refined_questions[:i])} refined questions")
+                logger.info(f"  Batch {i//batch_size + 1}: Extracted {batch_count} refined questions")
 
             except Exception as e:
                 logger.error(f"❌ Error in LLM refinement: {e}")
                 # Fallback: include all from this batch (better than losing data)
+                logger.warning(f"  Fallback: Keeping all {len(batch)} candidates from this batch")
                 refined_questions.extend(batch)
 
         logger.info(f"✅ STAGE 2 (LLM): Final refined questions: {len(refined_questions)}")
@@ -375,10 +367,10 @@ def get_question_extractor(use_llm: bool = True) -> QuestionExtractor:
     """
     Get global question extractor instance
 
-    ✅ TWO-STAGE approach with Claude refinement (RECOMMENDED)
+    ✅ TWO-STAGE approach with Qwen refinement (RECOMMENDED)
 
     Args:
-        use_llm: If True, uses TWO-STAGE pipeline with Claude refinement
+        use_llm: If True, uses TWO-STAGE pipeline with Qwen refinement
     """
     global _extractor
     if _extractor is None:
