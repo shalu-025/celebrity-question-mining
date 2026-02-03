@@ -3,7 +3,7 @@ Decision Agent Node
 LLM-based decision making for INGEST vs RETRIEVE
 This is the "agentic" layer that decides the workflow path
 
-🔴 UPDATED: Now uses Claude API (not OpenAI) with cost tracking
+🔄 UPDATED: Now uses Qwen 2.5 3B Instruct via Ollama with cost tracking
 """
 
 import os
@@ -30,14 +30,14 @@ class DecisionAgent:
         registry_path: str = "registry/celebrity_index.json"
     ):
         """
-        Initialize Decision Agent with Claude API
+        Initialize Decision Agent with Qwen LLM
 
-        🔴 CRITICAL: Uses Claude (not OpenAI) with cost tracking
+        🔄 UPDATED: Uses Qwen 2.5 3B Instruct via Ollama with cost tracking
         """
         self.registry_path = registry_path
         self.client = get_claude_client()
         self.cost_tracker = get_cost_tracker()
-        logger.info("✅ Decision Agent initialized (Claude API with cost tracking)")
+        logger.info("✅ Decision Agent initialized (Qwen LLM with cost tracking)")
 
     def load_registry(self) -> Dict:
         """Load celebrity registry"""
@@ -75,7 +75,7 @@ class DecisionAgent:
         force_ingest: bool = False
     ) -> Dict:
         """
-        Make agentic decision using LLM
+        Make agentic decision using LLM with validation
 
         Args:
             celebrity_name: Name of the celebrity
@@ -90,6 +90,10 @@ class DecisionAgent:
         """
         logger.info(f"Making decision for: {celebrity_name}")
 
+        # Load configuration
+        min_sources = int(os.getenv("MIN_SOURCES_THRESHOLD", "10"))
+        freshness_days = int(os.getenv("DATA_FRESHNESS_DAYS", "30"))
+
         # Load registry
         registry = self.load_registry()
         celebrity_status = registry['celebrities'].get(celebrity_name)
@@ -102,48 +106,63 @@ class DecisionAgent:
                 "celebrity_status": celebrity_status
             }
 
-        # Build context for LLM
+        # Pre-compute analysis for LLM
         if celebrity_status is None:
-            status_text = f"{celebrity_name} has NEVER been indexed."
-        else:
-            status_text = f"""{celebrity_name} was indexed on {celebrity_status['last_indexed']}.
-Sources indexed: {celebrity_status['sources_count']} ({', '.join(celebrity_status['source_types'])})
-Questions indexed: {celebrity_status['questions_count']}
-Last update: {celebrity_status['last_updated']}"""
+            analysis = f"""ANALYSIS:
+- Celebrity indexed: NO
+- {celebrity_name} has never been indexed before
 
-        # Create decision prompt
+RECOMMENDED DECISION: INGEST
+REASON: Must index celebrity before retrieval is possible"""
+        else:
+            # Calculate days since update
+            last_updated = datetime.fromisoformat(celebrity_status['last_updated'])
+            days_since_update = (datetime.utcnow() - last_updated).days
+            
+            sources_count = celebrity_status.get('sources_count', 0)
+            has_enough_sources = sources_count >= min_sources
+            is_fresh = days_since_update < freshness_days
+            
+            analysis = f"""ANALYSIS:
+- Celebrity indexed: YES
+- Last updated: {celebrity_status['last_updated']} ({days_since_update} days ago)
+- Sources indexed: {sources_count}
+- Questions indexed: {celebrity_status['questions_count']}
+- Source types: {', '.join(celebrity_status['source_types'])}
+
+THRESHOLD CHECKS:
+- Minimum sources needed: {min_sources}
+- Has enough sources: {"YES" if has_enough_sources else "NO"} ({sources_count} >= {min_sources} is {has_enough_sources})
+- Freshness threshold: {freshness_days} days
+- Data is fresh: {"YES" if is_fresh else "NO"} ({days_since_update} < {freshness_days} is {is_fresh})
+
+RECOMMENDED DECISION: {"RETRIEVE" if (has_enough_sources and is_fresh) else "INCREMENTAL_INGEST"}
+REASON: {"Sufficient recent data exists for retrieval" if (has_enough_sources and is_fresh) else "Need more data or data is stale"}"""
+
+        # Create decision prompt with explicit analysis
         prompt = f"""You are a decision agent for an interview question retrieval system.
 
-CONTEXT:
-- User is asking: "{user_question}"
-- Celebrity: {celebrity_name}
+USER QUERY: "{user_question}"
+CELEBRITY: {celebrity_name}
 
-CURRENT STATUS:
-{status_text}
+{analysis}
 
 YOUR TASK:
-Decide whether to:
-1. "INGEST" - Index new data for this celebrity (download and process interviews)
-2. "RETRIEVE" - Search existing indexed data
-3. "INCREMENTAL_INGEST" - Add new sources to existing index
-
-DECISION RULES:
-- If celebrity is NOT indexed → INGEST
-- If celebrity IS indexed and data is recent (within 30 days) → RETRIEVE
-- If celebrity IS indexed but data is old (>30 days) → INCREMENTAL_INGEST (add new sources)
-- If celebrity IS indexed but has very few sources (<3) → INCREMENTAL_INGEST
+Based on the analysis above, make a decision:
+1. "INGEST" - Index new data (celebrity never indexed)
+2. "RETRIEVE" - Search existing data (sufficient recent data exists)
+3. "INCREMENTAL_INGEST" - Add more sources (data is stale or insufficient)
 
 Respond in JSON format:
 {{
     "decision": "INGEST" | "RETRIEVE" | "INCREMENTAL_INGEST",
-    "reasoning": "Brief explanation of why this decision was made"
+    "reasoning": "Brief explanation matching the analysis above"
 }}"""
 
         try:
             response_text = self.client.generate(
                 prompt=prompt + "\n\nRespond with ONLY a JSON object, no other text.",
                 system="You are a precise decision-making agent. Always respond with valid JSON.",
-                model="claude-sonnet-4-20250514",  # ✅ Per requirements
                 max_tokens=200,
                 temperature=0,
                 purpose="agent_decision_making"
@@ -153,6 +172,23 @@ Respond in JSON format:
             result = json.loads(response_text)
             decision = result['decision']
             reasoning = result['reasoning']
+
+            # VALIDATION: Override obviously wrong decisions
+            if celebrity_status is not None:
+                sources_count = celebrity_status.get('sources_count', 0)
+                last_updated = datetime.fromisoformat(celebrity_status['last_updated'])
+                days_since_update = (datetime.utcnow() - last_updated).days
+                
+                # If we have plenty of sources and fresh data, must RETRIEVE
+                if sources_count >= min_sources and days_since_update < freshness_days:
+                    if decision in ["INCREMENTAL_INGEST", "INGEST"]:
+                        logger.warning(
+                            f"⚠️ Overriding LLM decision '{decision}'. "
+                            f"Have {sources_count} sources (>= {min_sources}) "
+                            f"with fresh data ({days_since_update} < {freshness_days} days)."
+                        )
+                        decision = "RETRIEVE"
+                        reasoning = f"Override: Already have {sources_count} sources with data from {days_since_update} days ago"
 
             logger.info(f"Decision: {decision}")
             logger.info(f"Reasoning: {reasoning}")

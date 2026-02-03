@@ -3,7 +3,7 @@ Answer Generator
 Formats retrieval results into natural language responses
 Uses LLM ONLY for explanation and formatting, NOT for inventing answers
 
-🔴 UPDATED: Now uses Claude API (not OpenAI)
+🔄 UPDATED: Now uses Qwen 2.5 3B Instruct via Ollama (OpenAI-compatible API)
 """
 
 import os
@@ -22,13 +22,13 @@ class AnswerGenerator:
 
     def __init__(self, api_key: Optional[str] = None):
         """
-        Initialize answer generator with Claude API
+        Initialize answer generator with Qwen LLM
 
-        🔴 CRITICAL: Uses Claude (not OpenAI) with cost tracking
+        🔄 UPDATED: Uses Qwen 2.5 3B Instruct via Ollama with cost tracking
         """
         self.client = get_claude_client()
         self.cost_tracker = get_cost_tracker()
-        logger.info("✅ Answer generator initialized (Claude API with cost tracking)")
+        logger.info("✅ Answer generator initialized (Qwen LLM with cost tracking)")
 
     def format_simple_response(self, retrieval_result: Dict) -> str:
         """
@@ -123,7 +123,6 @@ Format the response in a clear, user-friendly way with proper markdown formattin
             answer = self.client.generate(
                 prompt=prompt,
                 system="You are a precise assistant that presents search results without adding information.",
-                model="claude-sonnet-4-20250514",  # ✅ Per requirements
                 max_tokens=1000,
                 temperature=0.3,
                 purpose="format_retrieval_results"
@@ -133,7 +132,7 @@ Format the response in a clear, user-friendly way with proper markdown formattin
             return answer
 
         except Exception as e:
-            logger.error(f"Error generating LLM response: {e}")
+            logger.error(f"Error generating Qwen LLM response: {e}")
             # Fallback to simple response
             return self.format_simple_response(retrieval_result)
 
@@ -160,7 +159,6 @@ Keep it concise and friendly."""
             response = self.client.generate(
                 prompt=prompt,
                 system="You are a helpful assistant.",
-                model="claude-3-haiku-20240307",
                 max_tokens=150,
                 temperature=0.5,
                 purpose="generate_no_results_message"

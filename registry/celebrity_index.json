@@ -712,8 +712,28 @@
         "https://eu.36kr.com/en/p/3657408499016329",
         "https://www.forbes.com/sites/annatong/2026/01/28/openai-wants-to-create-biometric-social-network-to-kill-xs-bot-problem/"
       ]
+    },
+    "Shah Rukh Khan": {
+      "last_indexed": "2026-02-03T09:14:09.523821",
+      "last_updated": "2026-02-03T09:14:09.523823",
+      "sources_count": 8,
+      "questions_count": 164,
+      "source_types": [
+        "youtube",
+        "article"
+      ],
+      "sources": [
+        "https://www.youtube.com/watch?v=Ur_9sNPxteM&t=2038",
+        "https://www.youtube.com/watch?v=Ur_9sNPxteM&t=913",
+        "https://dontcallitbollywood.com/2019/04/19/shahrukh-interview-the-medium-is-the-message/",
+        "https://www.youtube.com/watch?v=Ur_9sNPxteM&t=1880",
+        "https://www.huffpost.com/archive/in/entry/the-shah-rukh-khan-interv_n_10765942",
+        "https://www.ndtv.com/india-news/i-am-srk-full-transcript-573402",
+        "https://timesofindia.indiatimes.com/entertainment/hindi/bollywood/news/shah-rukh-khans-fan-asks-him-for-a-role-in-king-actors-witty-response-wins-hearts-details-inside/articleshow/124950062.cms",
+        "https://www.youtube.com/watch?v=Ur_9sNPxteM&t=1871"
+      ]
     }
   },
-  "last_updated": "2026-01-29T17:26:27.710115",
+  "last_updated": "2026-02-03T09:14:09.523826",
   "version": "1.0.0"
 }
