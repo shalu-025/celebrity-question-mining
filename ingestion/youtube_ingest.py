@@ -23,11 +23,12 @@ class YouTubeIngester:
     """
 
     def __init__(self, download_dir: str = "data/downloads/youtube"):
-        self.download_dir = download_dir
+        self.base_download_dir = download_dir
         os.makedirs(download_dir, exist_ok=True)
         self.transcriber = get_transcriber()
         # 🔴 CRITICAL: use_llm=True (NO LLM for extraction per constraints)
         self.question_extractor = get_question_extractor(use_llm=True)
+        self.current_celebrity = None  # Track current celebrity for download paths
 
     def search_videos(
         self,
@@ -98,7 +99,9 @@ class YouTubeIngester:
         Returns:
             Path to downloaded audio file, or None if failed
         """
-        output_path = os.path.join(self.download_dir, f"{video_id}.wav")
+        # Use celebrity-specific subdirectory
+        download_dir = self._get_celebrity_download_dir()
+        output_path = os.path.join(download_dir, f"{video_id}.wav")
 
         # Skip if already downloaded
         if os.path.exists(output_path):
@@ -113,7 +116,7 @@ class YouTubeIngester:
                 'key': 'FFmpegExtractAudio',
                 'preferredcodec': 'wav',
             }],
-            'outtmpl': os.path.join(self.download_dir, f"{video_id}.%(ext)s"),
+            'outtmpl': os.path.join(download_dir, f"{video_id}.%(ext)s"),
             'quiet': True,
             'no_warnings': True,
         }
@@ -211,6 +214,17 @@ class YouTubeIngester:
             logger.error(f"Error extracting questions: {e}")
             return []
 
+    def _get_celebrity_download_dir(self) -> str:
+        """Get celebrity-specific download directory"""
+        if not self.current_celebrity:
+            return self.base_download_dir
+        
+        # Create slug from celebrity name
+        celebrity_slug = self.current_celebrity.lower().replace(' ', '_')
+        celebrity_dir = os.path.join(self.base_download_dir, celebrity_slug)
+        os.makedirs(celebrity_dir, exist_ok=True)
+        return celebrity_dir
+
     def ingest_celebrity(
         self,
         celebrity_name: str,
@@ -226,6 +240,8 @@ class YouTubeIngester:
         Returns:
             List of all extracted questions
         """
+        # Set current celebrity for download path
+        self.current_celebrity = celebrity_name
         logger.info(f"Starting YouTube ingestion for: {celebrity_name}")
 
         # Step 1: Search for videos
@@ -249,7 +265,8 @@ class YouTubeIngester:
 
     def cleanup_audio(self, video_id: str):
         """Delete downloaded audio file to save space"""
-        audio_path = os.path.join(self.download_dir, f"{video_id}.wav")
+        download_dir = self._get_celebrity_download_dir()
+        audio_path = os.path.join(download_dir, f"{video_id}.wav")
         if os.path.exists(audio_path):
             os.remove(audio_path)
             logger.info(f"Cleaned up audio: {video_id}")

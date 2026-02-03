@@ -175,20 +175,24 @@ Respond in JSON format:
 
             # VALIDATION: Override obviously wrong decisions
             if celebrity_status is not None:
+                # Use QUESTIONS count, not sources count (one source can have many questions)
+                questions_count = celebrity_status.get('questions_count', 0)
                 sources_count = celebrity_status.get('sources_count', 0)
                 last_updated = datetime.fromisoformat(celebrity_status['last_updated'])
                 days_since_update = (datetime.utcnow() - last_updated).days
                 
-                # If we have plenty of sources and fresh data, must RETRIEVE
-                if sources_count >= min_sources and days_since_update < freshness_days:
+                # If we have plenty of QUESTIONS and fresh data, must RETRIEVE
+                # Note: We check questions_count because one source can have many questions
+                # Example: 8 sources might yield 164 questions, which is plenty
+                if questions_count >= min_sources and days_since_update < freshness_days:
                     if decision in ["INCREMENTAL_INGEST", "INGEST"]:
                         logger.warning(
                             f"⚠️ Overriding LLM decision '{decision}'. "
-                            f"Have {sources_count} sources (>= {min_sources}) "
+                            f"Have {questions_count} questions from {sources_count} sources (>= {min_sources}) "
                             f"with fresh data ({days_since_update} < {freshness_days} days)."
                         )
                         decision = "RETRIEVE"
-                        reasoning = f"Override: Already have {sources_count} sources with data from {days_since_update} days ago"
+                        reasoning = f"Override: Already have {questions_count} questions from {days_since_update} days ago"
 
             logger.info(f"Decision: {decision}")
             logger.info(f"Reasoning: {reasoning}")
