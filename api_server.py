@@ -14,11 +14,13 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, AsyncGenerator
 import logging
 from dotenv import load_dotenv
 import asyncio
+import json
 from agent.graph import CelebrityQuestionGraph
 
 # Load environment variables
@@ -182,14 +184,156 @@ async def chat(request: ChatRequest):
         )
 
 
+@app.post("/api/chat/stream")
+async def chat_stream(request: ChatRequest):
+    """
+    Process a chat message and stream progress updates in real-time
+
+    Uses Server-Sent Events (SSE) to send progress during ingestion:
+    - "🔍 Searching for celebrity videos..."
+    - "📹 Downloading video 3/10..."
+    - "✨ Extracting questions..."
+    - "✅ Done! Found 150 questions"
+
+    Args:
+        request: ChatRequest with celebrity_name and question
+
+    Returns:
+        StreamingResponse with SSE events
+    """
+    async def event_generator() -> AsyncGenerator[str, None]:
+        try:
+            # Validate inputs
+            if not request.celebrity_name or not request.question:
+                error_event = {
+                    "type": "error",
+                    "message": "Both celebrity_name and question are required"
+                }
+                yield f"data: {json.dumps(error_event)}\n\n"
+                return
+
+            logger.info(f"Streaming response for {request.celebrity_name}: {request.question}")
+
+            # Send start event
+            start_event = {
+                "type": "start",
+                "message": f"Processing your question about {request.celebrity_name}...",
+                "celebrity": request.celebrity_name
+            }
+            yield f"data: {json.dumps(start_event)}\n\n"
+
+            # Get graph instance
+            celebrity_graph = get_graph()
+
+            # Send decision stage
+            decision_event = {
+                "type": "progress",
+                "stage": "decision",
+                "message": f"🤔 Checking if {request.celebrity_name} data exists...",
+                "progress": 1,
+                "total": 5
+            }
+            yield f"data: {json.dumps(decision_event)}\n\n"
+            await asyncio.sleep(0.5)
+
+            # Check if celebrity exists (quick check)
+            from agent.decision_node import DecisionAgent
+            decision_agent = DecisionAgent()
+            celebrity_status = decision_agent.get_celebrity_status(request.celebrity_name)
+
+            if celebrity_status is None:
+                # Need to ingest
+                ingest_event = {
+                    "type": "progress",
+                    "stage": "ingest",
+                    "message": f"📥 {request.celebrity_name} not found. Starting data ingestion...",
+                    "progress": 2,
+                    "total": 5
+                }
+                yield f"data: {json.dumps(ingest_event)}\n\n"
+                await asyncio.sleep(0.5)
+
+                youtube_event = {
+                    "type": "progress",
+                    "stage": "youtube",
+                    "message": f"🎥 Searching YouTube for {request.celebrity_name} interviews...",
+                    "progress": 3,
+                    "total": 5
+                }
+                yield f"data: {json.dumps(youtube_event)}\n\n"
+            else:
+                # Data exists, just retrieve
+                retrieve_event = {
+                    "type": "progress",
+                    "stage": "retrieve",
+                    "message": f"✅ {request.celebrity_name} data found! Searching for similar questions...",
+                    "progress": 3,
+                    "total": 5
+                }
+                yield f"data: {json.dumps(retrieve_event)}\n\n"
+                await asyncio.sleep(0.5)
+
+            # Run the graph (in thread pool)
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None,
+                celebrity_graph.run,
+                request.celebrity_name,
+                request.question,
+                request.force_ingest
+            )
+
+            # Send answer generation stage
+            answer_event = {
+                "type": "progress",
+                "stage": "answer",
+                "message": "✨ Generating answer with AI...",
+                "progress": 4,
+                "total": 5
+            }
+            yield f"data: {json.dumps(answer_event)}\n\n"
+            await asyncio.sleep(0.3)
+
+            # Send completion event
+            complete_event = {
+                "type": "complete",
+                "answer": result.get('answer'),
+                "decision": result.get('decision'),
+                "decision_reasoning": result.get('decision_reasoning'),
+                "matches_count": result.get('matches_count', 0),
+                "error": result.get('error')
+            }
+            yield f"data: {json.dumps(complete_event)}\n\n"
+
+            logger.info(f"Completed streaming response for {request.celebrity_name}")
+
+        except Exception as e:
+            logger.error(f"Error in streaming: {str(e)}", exc_info=True)
+            error_event = {
+                "type": "error",
+                "message": str(e)
+            }
+            yield f"data: {json.dumps(error_event)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+
 if __name__ == "__main__":
     import uvicorn
 
     print("\n" + "="*60)
-    print("🚀 Starting Celebrity Question API Server...")
+    print(" Starting Celebrity Question API Server...")
     print("="*60)
-    print("📡 API will be available at: http://localhost:8000")
-    print("📖 API docs available at: http://localhost:8000/docs")
+    print("API will be available at: http://localhost:8000")
+    print(" API docs available at: http://localhost:8000/docs")
     print("="*60 + "\n")
 
     uvicorn.run(

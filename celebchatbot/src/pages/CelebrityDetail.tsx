@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import MessageBubble from "@/components/MessageBubble";
-import { sendChatMessage } from "@/services/api";
+import { sendChatMessageWithProgress, ProgressEvent } from "@/services/api";
 
 const CelebrityDetail = () => {
   const { id } = useParams();
@@ -15,6 +15,7 @@ const CelebrityDetail = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [progressMessage, setProgressMessage] = useState<string>("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -44,13 +45,25 @@ const CelebrityDetail = () => {
     const questionText = inputValue; // Save before clearing
     setInputValue("");
     setIsTyping(true);
+    setProgressMessage(""); // Clear previous progress
 
     try {
-      // Call the real backend API
-      // This sends: celebrity_name="Virat Kohli" (or whoever was clicked)
-      //            question="What inspires you?" (or whatever user typed)
-      // Backend runs: python main.py --celebrity "..." --question "..."
-      const response = await sendChatMessage(celebrity.name, questionText);
+      // Call the streaming API with progress updates
+      // This shows real-time progress: "🔍 Searching...", "📹 Downloading...", etc.
+      const response = await sendChatMessageWithProgress(
+        celebrity.name,
+        questionText,
+        (event: ProgressEvent) => {
+          // Handle progress updates
+          if (event.type === 'progress' || event.type === 'start') {
+            setProgressMessage(event.message);
+            console.log('Progress:', event.message);
+          }
+        }
+      );
+
+      // Clear progress message
+      setProgressMessage("");
 
       // Create AI response message
       const aiMessage: Message = {
@@ -63,6 +76,9 @@ const CelebrityDetail = () => {
       setMessages(prev => [...prev, aiMessage]);
     } catch (error) {
       console.error('Failed to get response:', error);
+
+      // Clear progress message
+      setProgressMessage("");
 
       // Show error message to user
       const errorMessage: Message = {
@@ -165,11 +181,24 @@ const CelebrityDetail = () => {
                   <img src={celebrity.image} alt="" className="w-full h-full object-cover object-center" />
                 </div>
                 <div className="bg-chat-ai text-white px-4 py-3 rounded-2xl rounded-bl-md">
-                  <div className="flex gap-1">
-                    <span className="w-2 h-2 bg-white/60 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <span className="w-2 h-2 bg-white/60 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <span className="w-2 h-2 bg-white/60 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                  </div>
+                  {progressMessage ? (
+                    // Show progress message if available
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm">{progressMessage}</span>
+                      <div className="flex gap-1">
+                        <span className="w-1.5 h-1.5 bg-white/60 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                        <span className="w-1.5 h-1.5 bg-white/60 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                        <span className="w-1.5 h-1.5 bg-white/60 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                      </div>
+                    </div>
+                  ) : (
+                    // Show default typing indicator
+                    <div className="flex gap-1">
+                      <span className="w-2 h-2 bg-white/60 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                      <span className="w-2 h-2 bg-white/60 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                      <span className="w-2 h-2 bg-white/60 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                    </div>
+                  )}
                 </div>
               </div>
             )}
